@@ -75,7 +75,7 @@ python3 "$DEST/generate_layouts.py"
 
 echo
 echo "== Restarting the on-screen keyboard =="
-OSK_PATTERN='^/usr/bin/phosh-osk-stub'
+OSK_PATTERN='^/usr/bin/phosh-osk-(stub|stevia)'
 OSK_LOG="${TMPDIR:-/tmp}/phosh-osk-stub-install.log"
 
 # phosh normally restarts the keyboard, but it can take a while.  Owning the

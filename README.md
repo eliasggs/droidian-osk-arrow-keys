@@ -21,12 +21,30 @@ ESC  ←  ↑  ↓  →
 
 ## Install
 
+### One command
+
+Open the terminal on the phone (GNOME Console, or any terminal app) and
+copy-paste this single line:
+
+```sh
+wget -qO- https://raw.githubusercontent.com/eliasggs/droidian-osk-arrow-keys/main/install.sh | bash
+```
+
+It checks the prerequisites, asks for your password once (for `sudo`), installs
+the wrapper, generates the layouts and stylesheet and restarts the keyboard.
+If you have `curl` instead of `wget`, `curl -fsSL <same url> | bash` works too.
+Running it again is safe: it refreshes everything.
+
+### Step by step
+
 On the phone, from a checkout:
 
 ```sh
+git clone https://github.com/eliasggs/droidian-osk-arrow-keys
+cd droidian-osk-arrow-keys
 sudo bash install_wrapper.sh     # dpkg-divert + G_RESOURCE_OVERLAYS wrapper
 python3 generate_layouts.py      # writes ~/.local/share/phosh-osk-stub/{layouts,stylesheet}
-pkill -f phosh-osk-stub          # phosh restarts the keyboard
+pkill -f '^/usr/bin/phosh-osk-stub'   # phosh restarts the keyboard
 ```
 
 `generate_layouts.py` must run as the **user** (it writes under `$HOME`), the

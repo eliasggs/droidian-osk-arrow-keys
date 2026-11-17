@@ -1,35 +1,42 @@
 #!/usr/bin/env python3
-"""Regenerate phosh-osk-stub layouts (and the ESC key styling) for this phone.
+"""Regenerate phosh-osk-stub / phosh-osk-stevia layouts and the ESC styling.
 
-Reads every layout embedded in the real phosh-osk-stub binary, inserts a row
-with Left/Up/Down/Right keys at the top of every level, and writes the result to
+Reads every layout embedded in the real keyboard binary, inserts a row with
+Left/Up/Down/Right keys at the top of every level, and writes the result to
 ~/.local/share/phosh-osk-stub/layouts.
 
 The terminal layout's own ESC key is moved out of the second row into that
 arrow row: ESC comes first (left of the arrows) and is styled red through the
-`esc` style class.  The class is declared in a copy of the OSK's common.css in
-~/.local/share/phosh-osk-stub/stylesheet, which the wrapper picks up through
-G_RESOURCE_OVERLAYS as well.
+`esc` style class.  The class is declared in a copy of the keyboard's
+common.css in ~/.local/share/phosh-osk-stub/stylesheet, which the wrapper picks
+up through G_RESOURCE_OVERLAYS as well.
 
-The wrapper at /usr/bin/phosh-osk-stub makes the binary read those files
+Works with both names of the keyboard: phosh-osk-stub (resource prefix
+/mobi/phosh/osk-stub/, up to 0.47) and phosh-osk-stevia (/mobi/phosh/stevia/,
+0.48 and later).  The wrapper at the real binary path makes it read these files
 through G_RESOURCE_OVERLAYS.
 
-Run this again after a phosh-osk-stub package upgrade so the overlay picks up
-the new/changed layouts and stylesheet.
+Run this again after a phosh-osk-stub/stevia package upgrade so the overlay
+picks up the new/changed layouts and stylesheet.
 """
 import json
 import os
 import subprocess
 import sys
 
-CANDIDATES = ["/usr/bin/phosh-osk-stub.distrib", "/usr/bin/phosh-osk-stub"]
+CANDIDATES = [
+    "/usr/bin/phosh-osk-stevia.distrib",
+    "/usr/bin/phosh-osk-stub.distrib",
+    "/usr/bin/phosh-osk-stevia",
+    "/usr/bin/phosh-osk-stub",
+]
 BIN = next((p for p in CANDIDATES if os.path.exists(p)), CANDIDATES[-1])
 BASE = os.path.expanduser("~/.local/share/phosh-osk-stub")
 OUT = os.path.join(BASE, "layouts")
 OUT_STYLESHEET = os.path.join(BASE, "stylesheet")
 
-LAYOUTS_PREFIX = "/mobi/phosh/osk-stub/layouts/"
-STYLESHEET_PREFIX = "/mobi/phosh/osk-stub/stylesheet/"
+# Resource prefixes used by the keyboard over time.
+RESOURCE_PREFIXES = ("/mobi/phosh/stevia/", "/mobi/phosh/osk-stub/")
 
 ARROWS = [
     ("KEY_LEFT", "\u2190"),
@@ -45,7 +52,7 @@ ESC_LAYOUTS = {"terminal.json"}
 # rules (which is why the block is appended) so they win on equal specificity.
 ESC_CSS = """
 /* Local change: the terminal layout's ESC key sits left of the arrows and is
- * red (see generate_layouts.py / README-arrows.md). */
+ * red (see generate_layouts.py / README). */
 pos-key.esc {
   background: #c01c28;
   color: #ffffff;
@@ -121,20 +128,32 @@ def extract(resource):
     return subprocess.check_output(["gresource", "extract", BIN, resource])
 
 
-def list_resources(prefix, suffix=".json"):
-    out = subprocess.check_output(["gresource", "list", BIN], text=True)
+def resources():
+    return subprocess.check_output(["gresource", "list", BIN], text=True).splitlines()
+
+
+def find_prefix():
+    lines = resources()
+    for prefix in RESOURCE_PREFIXES:
+        if any(line.startswith(prefix + "layouts/") for line in lines):
+            return prefix
+    raise SystemExit(f"error: no layout resources found in {BIN}")
+
+
+def list_layouts(prefix):
+    out = resources()
     return sorted(
-        line[len(prefix):]
-        for line in out.splitlines()
-        if line.startswith(prefix) and line.endswith(suffix)
+        line.rsplit("/", 1)[1]
+        for line in out
+        if line.startswith(prefix + "layouts/") and line.endswith(".json")
     )
 
 
-def write_layouts():
-    names = list_resources(LAYOUTS_PREFIX)
+def write_layouts(prefix):
+    names = list_layouts(prefix)
     print(f"{len(names)} layouts")
     for name in names:
-        data = json.loads(extract(f"{LAYOUTS_PREFIX}{name}"))
+        data = json.loads(extract(f"{prefix}layouts/{name}"))
         if name in ESC_LAYOUTS and not strip_esc(data):
             print(f"warning: no ESC key found in {name}", file=sys.stderr)
         width = arrow_width(data)
@@ -149,8 +168,8 @@ def write_layouts():
     print(f"written to {OUT}")
 
 
-def write_stylesheet():
-    css = extract(f"{STYLESHEET_PREFIX}common.css").decode("utf-8")
+def write_stylesheet(prefix):
+    css = extract(f"{prefix}stylesheet/common.css").decode("utf-8")
     if "pos-key.esc" not in css:
         css = css.rstrip("\n") + "\n" + ESC_CSS
     path = os.path.join(OUT_STYLESHEET, "common.css")
@@ -163,8 +182,10 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     os.makedirs(OUT_STYLESHEET, exist_ok=True)
     print(f"binary: {BIN}")
-    write_layouts()
-    write_stylesheet()
+    prefix = find_prefix()
+    print(f"resource prefix: {prefix}")
+    write_layouts(prefix)
+    write_stylesheet(prefix)
 
 
 if __name__ == "__main__":

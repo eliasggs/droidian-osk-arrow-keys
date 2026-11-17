@@ -18,7 +18,7 @@ FILES="generate_layouts.py install_wrapper.sh restore-stock-osk.sh"
 
 die() { echo "error: $*" >&2; exit 1; }
 
-echo "== phosh-osk-stub arrow keys + red ESC: installer =="
+echo "== on-screen keyboard arrow keys + red ESC: installer =="
 
 # The layouts must be generated as the user whose session runs the keyboard.
 if [ "$(id -u)" -eq 0 ]; then
@@ -29,8 +29,15 @@ for bin in python3 gresource; do
     command -v "$bin" >/dev/null 2>&1 ||
         die "'$bin' not found. Install it with: sudo apt install python3 libglib2.0-bin"
 done
-[ -x /usr/bin/phosh-osk-stub ] ||
-    die "phosh-osk-stub is not installed (expected /usr/bin/phosh-osk-stub)"
+
+# phosh-osk-stub up to 0.47, phosh-osk-stevia from 0.48 on.
+OSK_BIN=/usr/bin/phosh-osk-stub
+if [ -x /usr/bin/phosh-osk-stevia ]; then
+    OSK_BIN=/usr/bin/phosh-osk-stevia
+fi
+[ -x "$OSK_BIN" ] ||
+    die "no on-screen keyboard found (looked for $OSK_BIN; is phosh-osk-stub installed?)"
+echo "keyboard: $OSK_BIN"
 
 # Use the files next to this script when running from a checkout, otherwise
 # download them from the repository.
@@ -75,7 +82,7 @@ python3 "$DEST/generate_layouts.py"
 
 echo
 echo "== Restarting the on-screen keyboard =="
-OSK_PATTERN='^/usr/bin/phosh-osk-(stub|stevia)'
+OSK_PATTERN="^$OSK_BIN"
 OSK_LOG="${TMPDIR:-/tmp}/phosh-osk-stub-install.log"
 
 # phosh normally restarts the keyboard, but it can take a while.  Owning the
@@ -111,7 +118,7 @@ if wait_osk 20; then
     echo "keyboard restarted"
 else
     echo "phosh did not restart it, starting it manually"
-    setsid /usr/bin/phosh-osk-stub --allow-replacement >"$OSK_LOG" 2>&1 </dev/null &
+    setsid "$OSK_BIN" --allow-replacement >"$OSK_LOG" 2>&1 </dev/null &
     if wait_osk 10; then
         echo "keyboard started manually"
     else

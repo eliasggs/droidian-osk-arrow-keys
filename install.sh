@@ -75,22 +75,51 @@ python3 "$DEST/generate_layouts.py"
 
 echo
 echo "== Restarting the on-screen keyboard =="
-pkill -f '^/usr/bin/phosh-osk-stub' 2>/dev/null || true
-restarted=
-for _ in 1 2 3 4 5 6; do
+OSK_PATTERN='^/usr/bin/phosh-osk-stub'
+OSK_LOG="${TMPDIR:-/tmp}/phosh-osk-stub-install.log"
+
+# phosh normally restarts the keyboard, but it can take a while.  Owning the
+# DBus name is the real test that the keyboard is usable again.
+name_owner() {
+    gdbus call --session --dest org.freedesktop.DBus \
+        --object-path /org/freedesktop/DBus \
+        --method org.freedesktop.DBus.GetNameOwner sm.puri.OSK0 2>/dev/null |
+        sed -n "s/.*'\([^']*\)'.*/\1/p"
+}
+
+wait_osk() {  # seconds
+    _left=$1
+    while [ "$_left" -gt 0 ]; do
+        [ -n "$(name_owner)" ] && return 0
+        sleep 1
+        _left=$((_left - 1))
+    done
+    [ -n "$(name_owner)" ]
+}
+
+pkill -f "$OSK_PATTERN" 2>/dev/null || true
+
+# Let the old instance drop the DBus name before looking for the new one,
+# otherwise we would mistake the dying process for the restarted keyboard.
+_left=5
+while [ "$_left" -gt 0 ] && [ -n "$(name_owner)" ]; do
     sleep 1
-    if pgrep -f '^/usr/bin/phosh-osk-stub' >/dev/null 2>&1; then
-        restarted=yes
-        break
-    fi
+    _left=$((_left - 1))
 done
-if [ -z "$restarted" ]; then
-    echo "phosh did not restart it; starting it manually"
-    setsid /usr/bin/phosh-osk-stub --allow-replacement >/dev/null 2>&1 </dev/null &
-    sleep 2
+
+if wait_osk 20; then
+    echo "keyboard restarted"
+else
+    echo "phosh did not restart it, starting it manually"
+    setsid /usr/bin/phosh-osk-stub --allow-replacement >"$OSK_LOG" 2>&1 </dev/null &
+    if wait_osk 10; then
+        echo "keyboard started manually"
+    else
+        echo "--- $OSK_LOG ---" >&2
+        tail -n 20 "$OSK_LOG" >&2 2>/dev/null || true
+        die "the keyboard did not come back; reboot the phone"
+    fi
 fi
-pgrep -f '^/usr/bin/phosh-osk-stub' >/dev/null 2>&1 ||
-    die "the keyboard is not running; log out and back in, or reboot"
 
 echo
 echo "== Done =="
